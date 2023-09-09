@@ -85,7 +85,7 @@ import {
     mint,
     fromTokenAccount.address,
     fromWallet.publicKey,
-    5000000000,
+    12000000000,
     []
   );
 
@@ -115,7 +115,7 @@ import {
     fromTokenAccount.address,
     toTokenAccount.address,
     fromWallet.publicKey,
-    3000000000,
+    5000000000,
     []
   );
 

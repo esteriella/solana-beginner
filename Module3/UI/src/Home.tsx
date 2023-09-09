@@ -1,19 +1,19 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as anchor from "@project-serum/anchor";
 
 import styled from "styled-components";
-import { Container, Snackbar } from "@mui/material";
-import Paper from "@mui/material/Paper";
-import Alert from "@mui/lab/Alert";
-import Grid from "@mui/material/Grid";
-import Typography from "@mui/material/Typography";
+import { Container, Snackbar } from "@material-ui/core";
+import Paper from "@material-ui/core/Paper";
+import Alert from "@material-ui/lab/Alert";
+import Grid from "@material-ui/core/Grid";
+import Typography from "@material-ui/core/Typography";
 import {
   Commitment,
   Connection,
   PublicKey,
   Transaction,
 } from "@solana/web3.js";
-import { useAnchorWallet, useWallet } from "@solana/wallet-adapter-react";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletDialogButton } from "@solana/wallet-adapter-material-ui";
 import {
   awaitTransactionSignatureConfirmation,
@@ -30,7 +30,6 @@ import { MintCountdown } from "./MintCountdown";
 import { MintButton } from "./MintButton";
 import { GatewayProvider } from "@civic/solana-gateway-react";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
-import { SolanaMobileWalletAdapterWalletName } from "@solana-mobile/wallet-adapter-mobile";
 
 const ConnectButton = styled(WalletDialogButton)`
   width: 100%;
@@ -73,13 +72,28 @@ const Home = (props: HomeProps) => {
   const [setupTxn, setSetupTxn] = useState<SetupState>();
 
   const rpcUrl = props.rpcHost;
-  const anchorWallet = useAnchorWallet();
-  const { connect, connected, publicKey, wallet } = useWallet();
+  const wallet = useWallet();
   const cluster = props.network;
+  const anchorWallet = useMemo(() => {
+    if (
+      !wallet ||
+      !wallet.publicKey ||
+      !wallet.signAllTransactions ||
+      !wallet.signTransaction
+    ) {
+      return;
+    }
+
+    return {
+      publicKey: wallet.publicKey,
+      signAllTransactions: wallet.signAllTransactions,
+      signTransaction: wallet.signTransaction,
+    } as anchor.Wallet;
+  }, [wallet]);
 
   const refreshCandyMachineState = useCallback(
     async (commitment: Commitment = "confirmed") => {
-      if (!publicKey) {
+      if (!anchorWallet) {
         return;
       }
       if (props.error !== undefined) {
@@ -97,7 +111,7 @@ const Home = (props: HomeProps) => {
       if (props.candyMachineId) {
         try {
           const cndy = await getCandyMachineState(
-            anchorWallet as anchor.Wallet,
+            anchorWallet,
             props.candyMachineId,
             connection
           );
@@ -137,7 +151,9 @@ const Home = (props: HomeProps) => {
             const mint = new anchor.web3.PublicKey(
               cndy.state.whitelistMintSettings.mint
             );
-            const token = (await getAtaForMint(mint, publicKey))[0];
+            const token = (
+              await getAtaForMint(mint, anchorWallet.publicKey)
+            )[0];
 
             try {
               const balance = await connection.getTokenAccountBalance(token);
@@ -165,7 +181,9 @@ const Home = (props: HomeProps) => {
           if (cndy?.state.tokenMint) {
             // retrieves the SPL token
             const mint = new anchor.web3.PublicKey(cndy.state.tokenMint);
-            const token = (await getAtaForMint(mint, publicKey))[0];
+            const token = (
+              await getAtaForMint(mint, anchorWallet.publicKey)
+            )[0];
             try {
               const balance = await connection.getTokenAccountBalance(token);
 
@@ -183,7 +201,7 @@ const Home = (props: HomeProps) => {
             }
           } else {
             const balance = new anchor.BN(
-              await connection.getBalance(publicKey)
+              await connection.getBalance(anchorWallet.publicKey)
             );
             const valid = balance.gte(userPrice);
             setIsValidBalance(valid);
@@ -246,7 +264,7 @@ const Home = (props: HomeProps) => {
             ) {
               setAlertState({
                 open: true,
-                message: `Couldn't fetch candy machine state from candy machine with address: ${props.candyMachineId}, using rpc: ${props.rpcHost}! You probably typed the REACT_APP_CANDY_MACHINE_ID value wrong in your .env file, or you are using the wrong RPC!`,
+                message: `Couldn't fetch candy machine state from candy machine with address: ${props.candyMachineId}, using rpc: ${props.rpcHost}! You probably typed the REACT_APP_CANDY_MACHINE_ID value in wrong in your .env file, or you are using the wrong RPC!`,
                 severity: "error",
                 hideDuration: null,
               });
@@ -288,7 +306,7 @@ const Home = (props: HomeProps) => {
   ) => {
     try {
       setIsUserMinting(true);
-      if (connected && candyMachine?.program && publicKey) {
+      if (wallet.connected && candyMachine?.program && wallet.publicKey) {
         let setupMint: SetupState | undefined;
         if (needTxnSplit && setupTxn === undefined) {
           setAlertState({
@@ -296,7 +314,10 @@ const Home = (props: HomeProps) => {
             message: "Please sign account setup transaction",
             severity: "info",
           });
-          setupMint = await createAccountsForMint(candyMachine, publicKey);
+          setupMint = await createAccountsForMint(
+            candyMachine,
+            wallet.publicKey
+          );
           let status: any = { err: true };
           if (setupMint.transaction) {
             status = await awaitTransactionSignatureConfirmation(
@@ -333,7 +354,7 @@ const Home = (props: HomeProps) => {
 
         const mintResult = await mintOneToken(
           candyMachine,
-          publicKey,
+          wallet.publicKey,
           beforeTransactions,
           afterTransactions,
           setupMint ?? setupTxn
@@ -476,19 +497,8 @@ const Home = (props: HomeProps) => {
             borderRadius: 6,
           }}
         >
-          {!connected ? (
-            <ConnectButton
-              onClick={(e) => {
-                if (
-                  wallet?.adapter.name === SolanaMobileWalletAdapterWalletName
-                ) {
-                  connect();
-                  e.preventDefault();
-                }
-              }}
-            >
-              Connect Wallet
-            </ConnectButton>
+          {!wallet.connected ? (
+            <ConnectButton>Connect Wallet</ConnectButton>
           ) : (
             <>
               {candyMachine && (
@@ -586,13 +596,15 @@ const Home = (props: HomeProps) => {
               <MintContainer>
                 {candyMachine?.state.isActive &&
                 candyMachine?.state.gatekeeper &&
-                publicKey &&
-                anchorWallet?.signTransaction ? (
+                wallet.publicKey &&
+                wallet.signTransaction ? (
                   <GatewayProvider
                     wallet={{
                       publicKey:
-                        publicKey || new PublicKey(CANDY_MACHINE_PROGRAM),
-                      signTransaction: anchorWallet.signTransaction,
+                        wallet.publicKey ||
+                        new PublicKey(CANDY_MACHINE_PROGRAM),
+                      //@ts-ignore
+                      signTransaction: wallet.signTransaction,
                     }}
                     gatekeeperNetwork={
                       candyMachine?.state?.gatekeeper?.gatekeeperNetwork

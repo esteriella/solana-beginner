@@ -27,6 +27,9 @@ In this project, I created spl token and named "Hot Token", an NFT is created ca
 
 For more information visit [Quicknode tutorial](https://www.quicknode.com/guides/solana-development/nfts/how-to-deploy-an-nft-collection-on-solana-using-sugar-candy-machine)
 
+
+    "@babel/plugin-proposal-private-property-in-object": "^7.18.6",
+
 ## Author
 
 [Opeyemi Esther Agbaje](https://github.com/esteriella)
